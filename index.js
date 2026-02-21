@@ -40,7 +40,7 @@ client.on('interactionCreate', async interaction => {
                 { name: '📦 Vật phẩm', value: `\`${item}\``, inline: true },
                 { name: '💰 Giá hiện tại', value: `**${price.toLocaleString()}** 🪙`, inline: true },
                 { name: '👤 Người dẫn đầu', value: `Chưa có`, inline: true },
-                { name: '⏰ Kết thúc', value: `<t:${Math.floor(endTime / 1000)}:R>`, inline: false }
+                { name: '⏰ Kết thúc trong', value: `<t:${Math.floor(endTime / 1000)}:R>`, inline: false }
             )
             .setFooter({ text: 'Sử dụng /bid để đặt giá ngay!' })
             .setTimestamp();
