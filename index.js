@@ -1,33 +1,38 @@
 require('dotenv').config();
 const { Client, GatewayIntentBits, SlashCommandBuilder, EmbedBuilder } = require('discord.js');
 const mongoose = require('mongoose');
-const Auction = require('./Auction');
 
 const client = new Client({ intents: [GatewayIntentBits.Guilds] });
 
+// Schema dữ liệu ngay trong file chính để đơn giản hóa
+const auctionSchema = new mongoose.Schema({
+    item: String,
+    highestBid: Number,
+    highestBidder: String,
+    endTime: Date,
+    channelId: String,
+    status: { type: String, default: 'active' }
+});
+const Auction = mongoose.model('Auction', auctionSchema);
+
 // Kết nối Database
-mongoose.connect(process.env.MONGO_URI)
-    .then(() => console.log('✅ Đã kết nối MongoDB'))
-    .catch(err => console.error('❌ Lỗi kết nối DB:', err));
+mongoose.connect(process.env.MONGO_URI).then(() => console.log('✅ DB Connected'));
 
 client.once('ready', async () => {
-    console.log(`🤖 Bot đang chạy: ${client.user.tag}`);
-    
-    // Đăng ký Slash Command
+    console.log(`🤖 Bot online: ${client.user.tag}`);
     const guild = client.guilds.cache.get(process.env.GUILD_ID);
     if (guild) {
         await guild.commands.set([
             new SlashCommandBuilder()
                 .setName('auction')
-                .setDescription('Bắt đầu một phiên đấu giá')
-                .addStringOption(opt => opt.setName('item').setDescription('Tên vật phẩm').setRequired(true))
-                .addIntegerOption(opt => opt.setName('price').setDescription('Giá khởi điểm').setRequired(true))
-                .addIntegerOption(opt => opt.setName('time').setDescription('Thời gian (phút)').setRequired(true)),
-            
+                .setDescription('Tạo đấu giá')
+                .addStringOption(o => o.setName('item').setDescription('Vật phẩm').setRequired(true))
+                .addIntegerOption(o => o.setName('price').setDescription('Giá sàn').setRequired(true))
+                .addIntegerOption(o => o.setName('time').setDescription('Phút').setRequired(true)),
             new SlashCommandBuilder()
                 .setName('bid')
-                .setDescription('Đặt giá thầu')
-                .addIntegerOption(opt => opt.setName('amount').setDescription('Số tiền đặt').setRequired(true))
+                .setDescription('Đặt giá')
+                .addIntegerOption(o => o.setName('amount').setDescription('Số tiền').setRequired(true))
         ]);
     }
 });
@@ -35,42 +40,37 @@ client.once('ready', async () => {
 client.on('interactionCreate', async interaction => {
     if (!interaction.isChatInputCommand()) return;
 
-    // LỆNH ĐẤU GIÁ
+    // Phản hồi ngay lập tức để tránh lỗi "Ứng dụng không phản hồi"
+    await interaction.deferReply();
+
     if (interaction.commandName === 'auction') {
         const item = interaction.options.getString('item');
         const price = interaction.options.getInteger('price');
         const time = interaction.options.getInteger('time');
         const endTime = new Date(Date.now() + time * 60000);
 
-        const newAuction = await Auction.create({
-            item, sellerId: interaction.user.id, highestBid: price, endTime, channelId: interaction.channelId
-        });
+        await Auction.create({ item, highestBid: price, endTime, channelId: interaction.channelId });
 
         const embed = new EmbedBuilder()
-            .setTitle('🔨 PHIÊN ĐẤU GIÁ BẮT ĐẦU')
-            .setColor('Blue')
-            .addFields(
-                { name: 'Vật phẩm', value: item, inline: true },
-                { name: 'Giá khởi điểm', value: `${price} 💰`, inline: true },
-                { name: 'Kết thúc lúc', value: `<t:${Math.floor(endTime / 1000)}:R>` }
-            );
-
-        return interaction.reply({ embeds: [embed] });
+            .setTitle('🔨 ĐẤU GIÁ MỚI')
+            .setDescription(`Vật phẩm: **${item}**\nGiá sàn: **${price}**\nKết thúc: <t:${Math.floor(endTime/1000)}:R>`)
+            .setColor('Blue');
+        
+        return interaction.editReply({ embeds: [embed] });
     }
 
-    // LỆNH ĐẶT GIÁ (BID)
     if (interaction.commandName === 'bid') {
         const amount = interaction.options.getInteger('amount');
         const auction = await Auction.findOne({ channelId: interaction.channelId, status: 'active' });
 
-        if (!auction) return interaction.reply('❌ Không có phiên đấu giá nào đang diễn ra ở đây.');
-        if (amount <= auction.highestBid) return interaction.reply(`❌ Bạn phải đặt giá cao hơn ${auction.highestBid}!`);
+        if (!auction) return interaction.editReply('❌ Không có phiên đấu giá nào.');
+        if (amount <= auction.highestBid) return interaction.editReply(`❌ Phải đặt cao hơn ${auction.highestBid}`);
 
         auction.highestBid = amount;
         auction.highestBidder = interaction.user.id;
         await auction.save();
 
-        return interaction.reply(`✅ **${interaction.user.username}** đã dẫn đầu với **${amount} 💰**!`);
+        return interaction.editReply(`✅ **${interaction.user.username}** dẫn đầu với **${amount}**!`);
     }
 });
 
